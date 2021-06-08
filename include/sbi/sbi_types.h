@@ -94,6 +94,8 @@ typedef unsigned long		physical_size_t;
 #define STR(x) XSTR(x)
 #define XSTR(x) #x
 
+#define ALIGN(x, a) ((typeof(x))((unsigned long)(x + (a - 1)) & ~(a - 1)))
+
 #define ROUNDUP(a, b) ((((a)-1) / (b) + 1) * (b))
 #define ROUNDDOWN(a, b) ((a) / (b) * (b))
 
