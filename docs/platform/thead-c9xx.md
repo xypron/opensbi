@@ -51,11 +51,6 @@ DTS Example1: (Single core, eg: Allwinner D1 - c906)
 		compatible = "simple-bus";
 		ranges;
 
-		reset: reset-sample {
-			compatible = "thead,reset-sample";
-			plic-delegate = <0x0 0x101ffffc>;
-		};
-
 		clint0: clint@14000000 {
 			compatible = "riscv,clint0";
 			interrupts-extended = <
@@ -67,7 +62,8 @@ DTS Example1: (Single core, eg: Allwinner D1 - c906)
 
 		intc: interrupt-controller@10000000 {
 			#interrupt-cells = <1>;
-			compatible = "riscv,plic0";
+			compatible = "allwinner,sun20i-d1-plic",
+				     "riscv,plic0";
 			interrupt-controller;
 			interrupts-extended = <
 				&cpu0_intc  0xffffffff &cpu0_intc  9
