@@ -943,7 +943,7 @@ int sbi_dbtr_enable_trig(unsigned long trig_idx_base,
 }
 
 int sbi_dbtr_update_trig(unsigned long smode,
-			 unsigned long trig_count)
+			 unsigned long trig_count, unsigned long *out)
 {
 	unsigned long trig_idx;
 	struct sbi_dbtr_trigger *trig;
@@ -973,6 +973,7 @@ int sbi_dbtr_update_trig(unsigned long smode,
 		trig_idx = entry->id.idx;
 
 		if (trig_idx >= hs->total_trigs) {
+			*out = _idx;
 			sbi_hart_protection_temp_unmap_range((unsigned long)entry, sizeof(*entry));
 			return SBI_ERR_INVALID_PARAM;
 		}
@@ -980,6 +981,7 @@ int sbi_dbtr_update_trig(unsigned long smode,
 		trig = INDEX_TO_TRIGGER(trig_idx);
 
 		if (!(trig->state & RV_DBTR_BIT_MASK(TS, MAPPED))) {
+			*out = _idx;
 			sbi_hart_protection_temp_unmap_range((unsigned long)entry, sizeof(*entry));
 			return SBI_ERR_FAILED;
 		}
@@ -987,6 +989,7 @@ int sbi_dbtr_update_trig(unsigned long smode,
 		rc = dbtr_check_trigger_config(hs, trig, &entry->data,
 					       tdata2_impl, tdata3_impl);
 		if (rc) {
+			*out = _idx;
 			sbi_hart_protection_temp_unmap_range((unsigned long)entry, sizeof(*entry));
 			return rc;
 		}
