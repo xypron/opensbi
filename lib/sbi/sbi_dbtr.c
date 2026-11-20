@@ -385,9 +385,20 @@ int sbi_dbtr_setup_shmem(const struct sbi_domain *dom, unsigned long smode,
 	if (shmem_phys_hi)
 		return SBI_EINVALID_ADDR;
 
-	if (dom && !sbi_domain_check_addr(dom,
-		  DBTR_SHMEM_MAKE_PHYS(shmem_phys_hi, shmem_phys_lo), smode,
-		  SBI_DOMAIN_READ | SBI_DOMAIN_WRITE))
+	/*
+	 * The shared memory is trig_max * (XLEN / 2) bytes. All of it has to be
+	 * readable and writable for the caller, not only its first byte,
+	 * otherwise a read of the triggers would write into memory that the
+	 * caller cannot access. A range that wraps around is rejected too.
+	 */
+	if (dom &&
+	    !sbi_domain_check_addr_range(dom,
+					 DBTR_SHMEM_MAKE_PHYS(shmem_phys_hi,
+							      shmem_phys_lo),
+					 hart_state->total_trigs *
+						 sizeof(union sbi_dbtr_shmem_entry),
+					 smode,
+					 SBI_DOMAIN_READ | SBI_DOMAIN_WRITE))
 		return SBI_ERR_INVALID_ADDRESS;
 
 	hart_state->shmem.phys_lo = shmem_phys_lo;
