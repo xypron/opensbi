@@ -805,6 +805,13 @@ int sbi_dbtr_install_trig(unsigned long smode,
 
 		rc = dbtr_check_trigger_config(hs, NULL, recv,
 					       tdata2_impl, tdata3_impl);
+		/*
+		 * A chain has to be completed by the next configuration, so
+		 * the last configuration must not continue it.
+		 */
+		if (!rc && _idx + 1 == trig_count &&
+		    dbtr_tdata1_chain(lle_to_cpu(recv->tdata1)))
+			rc = SBI_ERR_INVALID_PARAM;
 		if (rc) {
 			*out = _idx;
 			sbi_hart_protection_temp_unmap_range((unsigned long)shmem_base,
