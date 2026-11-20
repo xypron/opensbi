@@ -839,22 +839,52 @@ int sbi_dbtr_install_trig(unsigned long smode,
 	return SBI_SUCCESS;
 }
 
+/*
+ * Check the set of triggers of uninstall, enable and disable: bit i of the
+ * mask is the trigger with the index trig_idx_base + i. Each one has to be
+ * below trig_max and mapped to a hardware trigger, otherwise the specification
+ * demands SBI_ERR_INVALID_PARAM. Nothing is changed unless the whole set is
+ * valid. The comparison is done without adding base and bit, they cannot
+ * overflow.
+ */
+static int dbtr_check_trig_set(struct sbi_dbtr_hart_triggers_state *hs,
+			       unsigned long trig_idx_base,
+			       unsigned long trig_idx_mask)
+{
+	struct sbi_dbtr_trigger *trig;
+	unsigned long bit;
+
+	for_each_set_bit(bit, &trig_idx_mask, BITS_PER_LONG) {
+		if (trig_idx_base >= hs->total_trigs ||
+		    bit >= hs->total_trigs - trig_idx_base)
+			return SBI_ERR_INVALID_PARAM;
+
+		trig = INDEX_TO_TRIGGER(trig_idx_base + bit);
+		if (!(trig->state & RV_DBTR_BIT_MASK(TS, MAPPED)))
+			return SBI_ERR_INVALID_PARAM;
+	}
+
+	return SBI_SUCCESS;
+}
+
 int sbi_dbtr_uninstall_trig(unsigned long trig_idx_base,
 			    unsigned long trig_idx_mask)
 {
-	unsigned long trig_mask = trig_idx_mask << trig_idx_base;
-	unsigned long idx = trig_idx_base;
 	struct sbi_dbtr_trigger *trig;
 	struct sbi_dbtr_hart_triggers_state *hs;
+	unsigned long bit;
+	int rc;
 
 	hs = dbtr_thishart_state_ptr();
 	if (!hs)
 		return SBI_ERR_FAILED;
 
-	for_each_set_bit_from(idx, &trig_mask, hs->total_trigs) {
-		trig = INDEX_TO_TRIGGER(idx);
-		if (!(trig->state & RV_DBTR_BIT_MASK(TS, MAPPED)))
-			return SBI_ERR_INVALID_PARAM;
+	rc = dbtr_check_trig_set(hs, trig_idx_base, trig_idx_mask);
+	if (rc)
+		return rc;
+
+	for_each_set_bit(bit, &trig_idx_mask, BITS_PER_LONG) {
+		trig = INDEX_TO_TRIGGER(trig_idx_base + bit);
 
 		dbtr_trigger_clear(trig);
 
@@ -867,20 +897,20 @@ int sbi_dbtr_uninstall_trig(unsigned long trig_idx_base,
 int sbi_dbtr_enable_trig(unsigned long trig_idx_base,
 			 unsigned long trig_idx_mask)
 {
-	unsigned long trig_mask = trig_idx_mask << trig_idx_base;
-	unsigned long idx = trig_idx_base;
-	struct sbi_dbtr_trigger *trig;
 	struct sbi_dbtr_hart_triggers_state *hs;
+	unsigned long bit;
+	int rc;
 
 	hs = dbtr_thishart_state_ptr();
 	if (!hs)
 		return SBI_ERR_FAILED;
 
-	for_each_set_bit_from(idx, &trig_mask, hs->total_trigs) {
-		trig = INDEX_TO_TRIGGER(idx);
-		sbi_dprintf("%s: enable trigger %lu\n", __func__, idx);
-		dbtr_trigger_enable(trig);
-	}
+	rc = dbtr_check_trig_set(hs, trig_idx_base, trig_idx_mask);
+	if (rc)
+		return rc;
+
+	for_each_set_bit(bit, &trig_idx_mask, BITS_PER_LONG)
+		dbtr_trigger_enable(INDEX_TO_TRIGGER(trig_idx_base + bit));
 
 	return SBI_SUCCESS;
 }
@@ -945,19 +975,20 @@ int sbi_dbtr_update_trig(unsigned long smode,
 int sbi_dbtr_disable_trig(unsigned long trig_idx_base,
 			  unsigned long trig_idx_mask)
 {
-	unsigned long trig_mask = trig_idx_mask << trig_idx_base;
-	unsigned long idx = trig_idx_base;
-	struct sbi_dbtr_trigger *trig;
 	struct sbi_dbtr_hart_triggers_state *hs;
+	unsigned long bit;
+	int rc;
 
 	hs = dbtr_thishart_state_ptr();
 	if (!hs)
 		return SBI_ERR_FAILED;
 
-	for_each_set_bit_from(idx, &trig_mask, hs->total_trigs) {
-		trig = INDEX_TO_TRIGGER(idx);
-		dbtr_trigger_disable(trig);
-	}
+	rc = dbtr_check_trig_set(hs, trig_idx_base, trig_idx_mask);
+	if (rc)
+		return rc;
+
+	for_each_set_bit(bit, &trig_idx_mask, BITS_PER_LONG)
+		dbtr_trigger_disable(INDEX_TO_TRIGGER(trig_idx_base + bit));
 
 	return SBI_SUCCESS;
 }
