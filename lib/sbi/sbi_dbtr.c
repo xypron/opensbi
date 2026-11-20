@@ -694,6 +694,24 @@ int sbi_dbtr_read_trig(unsigned long smode,
 }
 
 /*
+ * Value of the chain field of tdata1, 0 if the trigger type has none. Only
+ * the types mcontrol and mcontrol6 define a chain field. The other types use
+ * the bits for something else, e.g. icount for its count, so they must not
+ * be compared as a chain.
+ */
+static unsigned long dbtr_tdata1_chain(unsigned long tdata1)
+{
+	switch (TDATA1_GET_TYPE(tdata1)) {
+	case RISCV_DBTR_TRIG_MCONTROL:
+		return !!(tdata1 & RV_DBTR_BIT_MASK(MC, CHAIN));
+	case RISCV_DBTR_TRIG_MCONTROL6:
+		return !!(tdata1 & RV_DBTR_BIT_MASK(MC6, CHAIN));
+	default:
+		return 0;
+	}
+}
+
+/*
  * Check the configuration of one trigger read from the shared memory.
  *
  * The same checks apply when a trigger is installed and when it is updated.
@@ -730,6 +748,15 @@ static int dbtr_check_trigger_config(struct sbi_dbtr_hart_triggers_state *hs,
 		return SBI_ERR_NOT_SUPPORTED;
 
 	if (trig) {
+		/*
+		 * An update keeps the type and the chain bit of the installed
+		 * trigger, see the update function of the specification.
+		 */
+		if (type != TDATA1_GET_TYPE(trig->tdata1) ||
+		    dbtr_tdata1_chain(tdata1) !=
+			    dbtr_tdata1_chain(trig->tdata1))
+			return SBI_ERR_INVALID_PARAM;
+
 		if (!__test_bit(type, &trig->type_mask) ||
 		    !dbtr_trigger_hw_supported(trig->index, tdata1, tdata2,
 					       tdata3))
