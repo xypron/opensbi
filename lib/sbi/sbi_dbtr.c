@@ -682,6 +682,55 @@ int sbi_dbtr_read_trig(unsigned long smode,
 	return SBI_SUCCESS;
 }
 
+/*
+ * Check the configuration of one trigger read from the shared memory.
+ *
+ * The same checks apply when a trigger is installed and when it is updated.
+ *
+ * @hs:		trigger state of the calling hart
+ * @trig:	trigger the configuration is meant for (update), or NULL if any
+ *		trigger of the hart may be used (install)
+ * @recv:	configuration to check
+ *
+ * SBI v3.0 sec 19.4 and 19.5 require SBI_ERR_NOT_SUPPORTED when a trigger
+ * programs a non-zero value into an unimplemented optional CSR. Only the
+ * "whole CSR unimplemented" case is caught here; WARL bits tied off inside an
+ * otherwise-implemented CSR are delegated to the device-specific
+ * trigger_supported() callback.
+ */
+static int dbtr_check_trigger_config(struct sbi_dbtr_hart_triggers_state *hs,
+				     const struct sbi_dbtr_trigger *trig,
+				     const struct sbi_dbtr_data_msg *recv,
+				     bool tdata2_impl, bool tdata3_impl)
+{
+	/* Read the shared memory only once */
+	unsigned long tdata1 = lle_to_cpu(recv->tdata1);
+	unsigned long tdata2 = lle_to_cpu(recv->tdata2);
+	unsigned long tdata3 = lle_to_cpu(recv->tdata3);
+	unsigned long type = TDATA1_GET_TYPE(tdata1);
+
+	if (!dbtr_trigger_supported(type))
+		return SBI_ERR_FAILED;
+
+	if (!dbtr_trigger_valid(type, tdata1))
+		return SBI_ERR_INVALID_PARAM;
+
+	if ((tdata2 && !tdata2_impl) || (tdata3 && !tdata3_impl))
+		return SBI_ERR_NOT_SUPPORTED;
+
+	if (trig) {
+		if (!__test_bit(type, &trig->type_mask) ||
+		    !dbtr_trigger_hw_supported(trig->index, tdata1, tdata2,
+					       tdata3))
+			return SBI_ERR_NOT_SUPPORTED;
+	} else if (!dbtr_trigger_any_hw_supported(hs, tdata1, tdata2,
+						  tdata3)) {
+		return SBI_ERR_NOT_SUPPORTED;
+	}
+
+	return SBI_SUCCESS;
+}
+
 int sbi_dbtr_install_trig(unsigned long smode,
 			  unsigned long trig_count, unsigned long *out)
 {
@@ -689,9 +738,8 @@ int sbi_dbtr_install_trig(unsigned long smode,
 	union sbi_dbtr_shmem_entry *entry;
 	struct sbi_dbtr_data_msg *recv;
 	struct sbi_dbtr_id_msg *xmit;
-	unsigned long ctrl;
 	u32 claimed = 0;
-	int slot;
+	int slot, rc;
 	struct sbi_dbtr_trigger *trig;
 	struct sbi_dbtr_hart_triggers_state *hs = NULL;
 	bool tdata2_impl, tdata3_impl;
@@ -710,52 +758,20 @@ int sbi_dbtr_install_trig(unsigned long smode,
 	sbi_hart_protection_temp_map_range((unsigned long)shmem_base,
 					   trig_count * sizeof(*entry));
 
-	/*
-	 * SBI v3.0 sec 19.4 requires SBI_ERR_NOT_SUPPORTED when a trigger
-	 * programs a non-zero value into an unimplemented optional CSR. Only
-	 * the "whole CSR unimplemented" case is caught here; WARL bits tied
-	 * off inside an otherwise-implemented CSR are delegated to the
-	 * device-specific trigger_supported() callback via
-	 * dbtr_trigger_any_hw_supported().
-	 */
 	tdata2_impl = tdata_implemented(CSR_TDATA2);
 	tdata3_impl = tdata_implemented(CSR_TDATA3);
 
 	/* Check requested triggers configuration */
 	for_each_trig_entry(shmem_base, trig_count, typeof(*entry), entry) {
 		recv = (struct sbi_dbtr_data_msg *)(&entry->data);
-		ctrl = recv->tdata1;
 
-		if (!dbtr_trigger_supported(TDATA1_GET_TYPE(ctrl))) {
+		rc = dbtr_check_trigger_config(hs, NULL, recv,
+					       tdata2_impl, tdata3_impl);
+		if (rc) {
 			*out = _idx;
 			sbi_hart_protection_temp_unmap_range((unsigned long)shmem_base,
 							     trig_count * sizeof(*entry));
-			return SBI_ERR_FAILED;
-		}
-
-		if (!dbtr_trigger_valid(TDATA1_GET_TYPE(ctrl), ctrl)) {
-			*out = _idx;
-			sbi_hart_protection_temp_unmap_range((unsigned long)shmem_base,
-							     trig_count * sizeof(*entry));
-			return SBI_ERR_INVALID_PARAM;
-		}
-
-		if ((recv->tdata2 && !tdata2_impl) ||
-		    (recv->tdata3 && !tdata3_impl)) {
-			*out = _idx;
-			sbi_hart_protection_temp_unmap_range((unsigned long)shmem_base,
-							     trig_count * sizeof(*entry));
-			return SBI_ERR_NOT_SUPPORTED;
-		}
-
-		if (!dbtr_trigger_any_hw_supported(hs,
-						   lle_to_cpu(recv->tdata1),
-						   lle_to_cpu(recv->tdata2),
-						   lle_to_cpu(recv->tdata3))) {
-			*out = _idx;
-			sbi_hart_protection_temp_unmap_range((unsigned long)shmem_base,
-							     trig_count * sizeof(*entry));
-			return SBI_ERR_NOT_SUPPORTED;
+			return rc;
 		}
 	}
 
@@ -867,6 +883,7 @@ int sbi_dbtr_update_trig(unsigned long smode,
 	void *shmem_base = NULL;
 	struct sbi_dbtr_hart_triggers_state *hs = NULL;
 	bool tdata2_impl, tdata3_impl;
+	int rc;
 
 	hs = dbtr_thishart_state_ptr();
 	if (!hs)
@@ -880,12 +897,6 @@ int sbi_dbtr_update_trig(unsigned long smode,
 	if (trig_count > hs->total_trigs)
 		return SBI_ERR_BAD_RANGE;
 
-	/*
-	 * SBI v3.0 sec 19.5 requires SBI_ERR_NOT_SUPPORTED when a trigger
-	 * programs a non-zero value into an unimplemented optional CSR. Only
-	 * the "whole CSR unimplemented" case is caught; WARL bits tied off
-	 * inside an otherwise-implemented CSR are not.
-	 */
 	tdata2_impl = tdata_implemented(CSR_TDATA2);
 	tdata3_impl = tdata_implemented(CSR_TDATA3);
 
@@ -905,18 +916,11 @@ int sbi_dbtr_update_trig(unsigned long smode,
 			return SBI_ERR_FAILED;
 		}
 
-		if ((entry->data.tdata2 && !tdata2_impl) ||
-		    (entry->data.tdata3 && !tdata3_impl)) {
+		rc = dbtr_check_trigger_config(hs, trig, &entry->data,
+					       tdata2_impl, tdata3_impl);
+		if (rc) {
 			sbi_hart_protection_temp_unmap_range((unsigned long)entry, sizeof(*entry));
-			return SBI_ERR_NOT_SUPPORTED;
-		}
-
-		if (!dbtr_trigger_hw_supported(trig->index,
-					       lle_to_cpu(entry->data.tdata1),
-					       lle_to_cpu(entry->data.tdata2),
-					       lle_to_cpu(entry->data.tdata3))) {
-			sbi_hart_protection_temp_unmap_range((unsigned long)entry, sizeof(*entry));
-			return SBI_ERR_NOT_SUPPORTED;
+			return rc;
 		}
 
 		dbtr_trigger_setup(trig, &entry->data);
