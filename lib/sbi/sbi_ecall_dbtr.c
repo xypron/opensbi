@@ -28,7 +28,7 @@ static int sbi_ecall_dbtr_handler(unsigned long extid, unsigned long funcid,
 		break;
 	case SBI_EXT_DBTR_SETUP_SHMEM:
 		ret = sbi_dbtr_setup_shmem(sbi_domain_thishart_ptr(), smode,
-					   regs->a0, regs->a1);
+					   regs->a0, regs->a1, regs->a2);
 		break;
 	case SBI_EXT_DBTR_TRIGGER_READ:
 		ret = sbi_dbtr_read_trig(smode, regs->a0, regs->a1);

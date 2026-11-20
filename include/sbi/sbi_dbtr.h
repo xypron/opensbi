@@ -114,7 +114,8 @@ int sbi_dbtr_init(struct sbi_scratch *scratch, bool coldboot);
 int sbi_dbtr_supported(void);
 int sbi_dbtr_setup_shmem(const struct sbi_domain *dom, unsigned long smode,
 			 unsigned long shmem_phys_lo,
-			 unsigned long shmem_phys_hi);
+			 unsigned long shmem_phys_hi,
+			 unsigned long flags);
 int sbi_dbtr_num_trig(unsigned long trig_tdata1, unsigned long *out);
 int sbi_dbtr_read_trig(unsigned long smode,
 		       unsigned long trig_idx_base, unsigned long trig_count);

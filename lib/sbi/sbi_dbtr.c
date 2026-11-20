@@ -337,9 +337,14 @@ int sbi_dbtr_get_total_triggers(void)
 
 int sbi_dbtr_setup_shmem(const struct sbi_domain *dom, unsigned long smode,
 			 unsigned long shmem_phys_lo,
-			 unsigned long shmem_phys_hi)
+			 unsigned long shmem_phys_hi,
+			 unsigned long flags)
 {
 	struct sbi_dbtr_hart_triggers_state *hart_state;
+
+	/* The flags parameter is reserved for future use and must be zero */
+	if (flags)
+		return SBI_ERR_INVALID_PARAM;
 
 	if (dom && !sbi_domain_is_assigned_hart(dom, current_hartindex())) {
 		sbi_dprintf("%s: calling hart not assigned to this domain\n",
